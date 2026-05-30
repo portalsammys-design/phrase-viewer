@@ -1,5 +1,5 @@
 const CACHE_NAME = 'phrase-viewer-v1';
-const SHELL_URLS = ['/index.html', '/manifest.json'];
+const SHELL_URLS = ['./index.html', './manifest.json'];
 
 self.addEventListener('install', e => {
   e.waitUntil(caches.open(CACHE_NAME).then(c => c.addAll(SHELL_URLS)));
