@@ -585,7 +585,10 @@ async function sendMagicLink() {
   btn.disabled = true;
   msg.textContent = 'Sending...';
   msg.className = 'login-msg';
-  const { error } = await db.auth.signInWithOtp({ email });
+  const { error } = await db.auth.signInWithOtp({
+    email,
+    options: { emailRedirectTo: 'https://portalsammys-design.github.io/phrase-viewer/' }
+  });
   if (error) {
     msg.textContent = error.message;
     msg.className = 'login-msg login-error';
