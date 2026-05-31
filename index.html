@@ -671,6 +671,13 @@ let activeLang = 'vi'; // 現在の学習言語
 const LANG_LABELS = { vi: 'Tiếng Việt', id: 'Bahasa', en: 'English' };
 const LANG_TTS = { vi: 'vi-VN', id: 'id-ID', en: 'en-US' };
 
+// 事前生成音声マニフェスト（WAL-311）: mp3がある言語/フレーズのみmp3再生。無ければWeb Speech
+let audioManifest = {}; // { lang: Set(phraseId) }
+fetch('audio/manifest.json')
+  .then(r => r.ok ? r.json() : {})
+  .then(m => { for (const l of Object.keys(m)) audioManifest[l] = new Set(m[l]); })
+  .catch(() => {});
+
 function getTranslation(phraseId, lang) {
   return allTranslations[phraseId + '_' + (lang || activeLang)] || null;
 }
@@ -1057,7 +1064,7 @@ function renderStudyCard() {
           ${t ? `<div class="back-lang" style="cursor:pointer" onclick="event.stopPropagation();showWordLang('${p.id}','${activeLang}')">
             <span class="tag">${activeLang.toUpperCase()}</span>
             <span class="text">${esc(t.translation)}</span>
-            <button class="tts-btn" onclick="event.stopPropagation();speak('${escAttr(t.translation)}','${ttsLocale}')">&#x1f50a;</button>
+            <button class="tts-btn" onclick="event.stopPropagation();speak('${escAttr(t.translation)}','${ttsLocale}','${p.id}')">&#x1f50a;</button>
           </div>
           ${t.pronunciation ? `<div class="back-pronunciation">${esc(t.pronunciation)}</div>` : ''}` : ''}
         </div>
@@ -1141,7 +1148,18 @@ async function studyAnswer(answer) {
 }
 
 // === TTS ===
-function speak(text, lang) {
+function speak(text, lang, phraseId) {
+  // 1. 事前生成mp3を最優先（オフライン・iOSでも確実に鳴る）。マニフェストで同期判定しジェスチャー保持
+  const code = (lang || '').split('-')[0];
+  if (phraseId && audioManifest[code] && audioManifest[code].has(phraseId)) {
+    const audio = new Audio('audio/' + code + '/' + phraseId + '.mp3');
+    audio.play().catch(() => webSpeak(text, lang));
+    return;
+  }
+  // 2. 補助: Web Speech API（mp3未生成の言語=現状VN等。Apple内蔵音声）
+  webSpeak(text, lang);
+}
+function webSpeak(text, lang) {
   if (!('speechSynthesis' in window)) return;
   window.speechSynthesis.cancel();
   const u = new SpeechSynthesisUtterance(text);
