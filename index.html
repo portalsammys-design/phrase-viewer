@@ -510,6 +510,7 @@
   <p id="subtitle">loading...</p>
 </div>
 
+<div id="lang-selector" class="filters" style="margin-bottom:8px"></div>
 <div class="tabs">
   <button class="tab-btn active" onclick="switchTab('browse')">Browse</button>
   <button class="tab-btn" onclick="switchTab('study')">Study</button>
@@ -633,9 +634,26 @@ if ('serviceWorker' in navigator) {
 }
 
 let allPhrases = [];
+let allTranslations = {}; // { phraseId_lang: { translation, pronunciation, tts_locale } }
 let allWords = {};
 let activeCategory = 'all';
 let activeSource = 'all';
+let activeLang = 'vi'; // 現在の学習言語
+const LANG_LABELS = { vi: 'Tiếng Việt', id: 'Bahasa', en: 'English' };
+const LANG_TTS = { vi: 'vi-VN', id: 'id-ID', en: 'en-US' };
+
+function getTranslation(phraseId, lang) {
+  return allTranslations[phraseId + '_' + (lang || activeLang)] || null;
+}
+
+function getAvailableLangs() {
+  const langs = new Set();
+  Object.keys(allTranslations).forEach(k => {
+    const parts = k.split('_');
+    langs.add(parts[parts.length - 1]);
+  });
+  return [...langs];
+}
 let studyQueue = [];
 let studyIndex = 0;
 let studiedToday = 0;
@@ -667,6 +685,16 @@ async function loadData() {
   }
   allPhrases = phrases || [];
 
+  // phrase_translations取得（多言語対応 WAL-311）
+  const { data: translations } = await db
+    .from('phrase_translations')
+    .select('*');
+
+  allTranslations = {};
+  (translations || []).forEach(t => {
+    allTranslations[t.phrase_id + '_' + t.lang] = t;
+  });
+
   const { data: words } = await db
     .from('phrase_words')
     .select('*')
@@ -678,14 +706,32 @@ async function loadData() {
     const key = w.phrase_id + '_' + lang;
     if (!allWords[key]) allWords[key] = [];
     allWords[key].push(w);
-    // Also store under phraseId-only key for backward compat
     if (!allWords[w.phrase_id]) allWords[w.phrase_id] = [];
     allWords[w.phrase_id].push(w);
   });
 
   updateStats();
+  renderLangSelector();
   renderFilters();
   renderPhrases();
+}
+
+function renderLangSelector() {
+  const langs = getAvailableLangs();
+  if (langs.length <= 1) return; // 1言語なら表示不要
+  const container = document.getElementById('lang-selector');
+  if (!container) return;
+  container.innerHTML = langs.map(l =>
+    `<button class="filter-btn ${l === activeLang ? 'active' : ''}" onclick="switchLang('${l}')">${LANG_LABELS[l] || l.toUpperCase()}</button>`
+  ).join('');
+}
+
+function switchLang(lang) {
+  activeLang = lang;
+  renderLangSelector();
+  renderPhrases();
+  if (document.getElementById('tab-study').classList.contains('active')) loadStudySession();
+  if (document.getElementById('tab-build').classList.contains('active')) loadBuildSession();
 }
 
 function updateStats() {
@@ -746,12 +792,15 @@ function renderPhrases() {
     container.innerHTML = `<div class="empty"><h2>No phrases yet</h2><p>Extract phrases from text to see them here</p></div>`;
     return;
   }
-  container.innerHTML = filtered.map(p => `
+  container.innerHTML = filtered.map(p => {
+    const t = getTranslation(p.id, activeLang);
+    const en = getTranslation(p.id, 'en');
+    return `
     <div class="phrase-card" onclick="toggleWords('${p.id}')">
       <div class="phrase-source">${esc(p.source_text)}</div>
       <div class="phrase-translations">
-        ${p.en_translation ? `<div class="phrase-lang"><span class="tag">EN</span><span class="text">${esc(p.en_translation)}</span></div>` : ''}
-        ${p.vi_translation ? `<div class="phrase-lang"><span class="tag">VI</span><span class="text">${esc(p.vi_translation)}</span>${p.vi_pronunciation ? `<span class="pronunciation">${esc(p.vi_pronunciation)}</span>` : ''}</div>` : ''}
+        ${en ? `<div class="phrase-lang"><span class="tag">EN</span><span class="text">${esc(en.translation)}</span></div>` : (p.en_translation ? `<div class="phrase-lang"><span class="tag">EN</span><span class="text">${esc(p.en_translation)}</span></div>` : '')}
+        ${t ? `<div class="phrase-lang"><span class="tag">${activeLang.toUpperCase()}</span><span class="text">${esc(t.translation)}</span>${t.pronunciation ? `<span class="pronunciation">${esc(t.pronunciation)}</span>` : ''}</div>` : ''}
       </div>
       <div class="phrase-meta">
         <span class="badge">${esc(p.category)}</span>
@@ -760,7 +809,7 @@ function renderPhrases() {
       </div>
       <div class="words-panel" id="words-${p.id}">${renderWordRows(p.id)}</div>
     </div>
-  `).join('');
+  `}).join('');
 }
 
 // Vietnamese tone detection from diacritics
@@ -807,7 +856,8 @@ function getWordsForPhrase(phraseId, lang, phrase) {
   if (dbWords && dbWords.length > 0) return { words: dbWords, source: 'db' };
   // 2. Fallback: auto-split from phrase translation
   if (phrase) {
-    const text = lang === 'en' ? phrase.en_translation : phrase.vi_translation;
+    const t = getTranslation(phraseId, lang);
+    const text = t ? t.translation : (lang === 'en' ? phrase.en_translation : phrase.vi_translation);
     if (text) return { words: autoSplitWords(text, lang), source: 'auto' };
   }
   return { words: [], source: 'none' };
@@ -958,7 +1008,10 @@ function renderStudyCard() {
 
   const item = studyQueue[studyIndex];
   const p = item.phrase;
-  const hasWords = p.vi_translation || p.en_translation || allWords[p.id + '_vi'] || allWords[p.id + '_en'] || allWords[p.id];
+  const t = getTranslation(p.id, activeLang);
+  const en = getTranslation(p.id, 'en');
+  const ttsLocale = t ? (t.tts_locale || LANG_TTS[activeLang]) : LANG_TTS[activeLang];
+  const hasWords = t || en || p.en_translation || allWords[p.id + '_' + activeLang] || allWords[p.id + '_en'] || allWords[p.id];
 
   area.innerHTML = `
     <div class="study-card" id="study-card" onclick="flipCard()">
@@ -967,20 +1020,20 @@ function renderStudyCard() {
       <div class="back-content">
         <div style="font-size:16px;font-weight:600;margin-bottom:12px;color:var(--text)">${esc(p.source_text)}</div>
         <div class="back-translations">
-          ${p.en_translation ? `<div class="back-lang" style="cursor:pointer" onclick="event.stopPropagation();showWordLang('${p.id}','en')">
+          ${en ? `<div class="back-lang" style="cursor:pointer" onclick="event.stopPropagation();showWordLang('${p.id}','en')">
             <span class="tag">EN</span>
-            <span class="text">${esc(p.en_translation)}</span>
-            <button class="tts-btn" onclick="event.stopPropagation();speak('${escAttr(p.en_translation)}','en-US')">&#x1f50a;</button>
-          </div>` : ''}
-          ${p.vi_translation ? `<div class="back-lang" style="cursor:pointer" onclick="event.stopPropagation();showWordLang('${p.id}','vi')">
-            <span class="tag">VI</span>
-            <span class="text">${esc(p.vi_translation)}</span>
-            <button class="tts-btn" onclick="event.stopPropagation();speak('${escAttr(p.vi_translation)}','vi-VN')">&#x1f50a;</button>
+            <span class="text">${esc(en.translation)}</span>
+            <button class="tts-btn" onclick="event.stopPropagation();speak('${escAttr(en.translation)}','en-US')">&#x1f50a;</button>
+          </div>` : (p.en_translation ? `<div class="back-lang"><span class="tag">EN</span><span class="text">${esc(p.en_translation)}</span></div>` : '')}
+          ${t ? `<div class="back-lang" style="cursor:pointer" onclick="event.stopPropagation();showWordLang('${p.id}','${activeLang}')">
+            <span class="tag">${activeLang.toUpperCase()}</span>
+            <span class="text">${esc(t.translation)}</span>
+            <button class="tts-btn" onclick="event.stopPropagation();speak('${escAttr(t.translation)}','${ttsLocale}')">&#x1f50a;</button>
           </div>
-          ${p.vi_pronunciation ? `<div class="back-pronunciation">${esc(p.vi_pronunciation)}</div>` : ''}` : ''}
+          ${t.pronunciation ? `<div class="back-pronunciation">${esc(t.pronunciation)}</div>` : ''}` : ''}
         </div>
         ${hasWords ? `<div class="back-words" id="study-words-${p.id}">
-          ${renderWordRows(p.id, 'vi', p)}
+          ${renderWordRows(p.id, activeLang, p)}
         </div>` : ''}
       </div>
     </div>
@@ -1166,7 +1219,7 @@ async function loadBuildSession() {
   buildQueue = phrasesWithWords.slice(0, DAILY_LIMIT);
   buildIndex = 0;
   buildStudied = 0;
-  buildLang = 'vi';
+  buildLang = activeLang;
   renderBuildCard();
 }
 
@@ -1190,15 +1243,15 @@ function renderBuildCard() {
   }
 
   const p = buildQueue[buildIndex];
-  const viResult = getWordsForPhrase(p.id, 'vi', p);
+  const langResult = getWordsForPhrase(p.id, activeLang, p);
   const enResult = getWordsForPhrase(p.id, 'en', p);
-  const hasVi = viResult.words.length > 1;
+  const hasLang = langResult.words.length > 1;
   const hasEn = enResult.words.length > 1;
 
-  if (!hasVi && hasEn) buildLang = 'en';
-  else if (hasVi && !hasEn) buildLang = 'vi';
+  if (!hasLang && hasEn) buildLang = 'en';
+  else if (hasLang) buildLang = activeLang;
 
-  const buildWords = buildLang === 'en' ? enResult.words : viResult.words;
+  const buildWords = buildLang === 'en' ? enResult.words : langResult.words;
   buildCorrectOrder = buildWords.map(w => w.word || w.vi_word);
   buildSelected = [];
 
@@ -1208,9 +1261,9 @@ function renderBuildCard() {
     <div class="study-card" style="cursor:default">
       <div class="build-question">${esc(p.source_text)}</div>
       <div class="build-hint">Tap words in the correct order</div>
-      ${(hasVi && hasEn) ? `<div class="build-lang-toggle">
+      ${(hasLang && hasEn) ? `<div class="build-lang-toggle">
         <button class="filter-btn ${buildLang==='en'?'active':''}" onclick="switchBuildLang('en')" style="padding:4px 12px;font-size:12px">EN</button>
-        <button class="filter-btn ${buildLang==='vi'?'active':''}" onclick="switchBuildLang('vi')" style="padding:4px 12px;font-size:12px">VI</button>
+        <button class="filter-btn ${buildLang===activeLang?'active':''}" onclick="switchBuildLang('${activeLang}')" style="padding:4px 12px;font-size:12px">${activeLang.toUpperCase()}</button>
       </div>` : ''}
       <div class="build-answer-area" id="build-answer"></div>
       <div class="build-choices" id="build-choices">
