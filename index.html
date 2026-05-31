@@ -460,7 +460,7 @@
   }
   #login-screen h1 { font-size: 28px; margin-bottom: 8px; }
   #login-screen p { color: var(--text-secondary); margin-bottom: 24px; }
-  #login-screen input[type="email"] {
+  #login-screen input[type="email"], #login-screen input[type="text"] {
     width: 100%;
     max-width: 320px;
     padding: 14px 16px;
@@ -500,7 +500,9 @@
   <h1>Phrase Viewer</h1>
   <p>Sign in to access your phrases</p>
   <input type="email" id="login-email" placeholder="Email address" autocomplete="email">
-  <button id="login-btn" onclick="sendMagicLink()">Send Magic Link</button>
+  <button id="login-btn" onclick="sendCode()">Send Code</button>
+  <input type="text" id="login-code" placeholder="6-digit code" inputmode="numeric" autocomplete="one-time-code" maxlength="6" style="display:none;">
+  <button id="verify-btn" onclick="verifyCode()" style="display:none;">Verify</button>
   <div class="login-msg" id="login-msg"></div>
 </div>
 
@@ -578,7 +580,7 @@ const db = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 let USER_ID = null;
 
 // === Auth ===
-async function sendMagicLink() {
+async function sendCode() {
   const email = document.getElementById('login-email').value.trim();
   const btn = document.getElementById('login-btn');
   const msg = document.getElementById('login-msg');
@@ -586,6 +588,7 @@ async function sendMagicLink() {
   btn.disabled = true;
   msg.textContent = 'Sending...';
   msg.className = 'login-msg';
+  // OTPコード方式: メールで6桁コードを送信（マジックリンクのリダイレクトに依存しない=iOS PWA standaloneでセッション保持）
   const { error } = await db.auth.signInWithOtp({
     email,
     options: { emailRedirectTo: 'https://portalsammys-design.github.io/phrase-viewer/' }
@@ -595,7 +598,33 @@ async function sendMagicLink() {
     msg.className = 'login-msg login-error';
     btn.disabled = false;
   } else {
-    msg.textContent = 'Check your email for the login link!';
+    msg.textContent = 'Enter the 6-digit code from your email.';
+    msg.className = 'login-msg';
+    document.getElementById('login-code').style.display = 'block';
+    document.getElementById('verify-btn').style.display = 'block';
+    document.getElementById('login-code').focus();
+    btn.disabled = false;
+    btn.textContent = 'Resend Code';
+  }
+}
+
+async function verifyCode() {
+  const email = document.getElementById('login-email').value.trim();
+  const token = document.getElementById('login-code').value.trim();
+  const vbtn = document.getElementById('verify-btn');
+  const msg = document.getElementById('login-msg');
+  if (!token) { msg.textContent = 'Enter the code'; msg.className = 'login-msg login-error'; return; }
+  vbtn.disabled = true;
+  msg.textContent = 'Verifying...';
+  msg.className = 'login-msg';
+  // 6桁コードを検証。成功でonAuthStateChangeがshowApp()を発火し、セッションはPWA内ストレージに保存される
+  const { error } = await db.auth.verifyOtp({ email, token, type: 'email' });
+  if (error) {
+    msg.textContent = error.message;
+    msg.className = 'login-msg login-error';
+    vbtn.disabled = false;
+  } else {
+    msg.textContent = 'Success!';
     msg.className = 'login-msg';
   }
 }
