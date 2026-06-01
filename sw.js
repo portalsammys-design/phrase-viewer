@@ -1,4 +1,4 @@
-const CACHE_NAME = 'phrase-viewer-v2';
+const CACHE_NAME = 'phrase-viewer-v3';
 const SHELL_URLS = ['./index.html', './manifest.json'];
 
 // WAL-311: 事前生成音声(mp3)をインストール時にプリキャッシュ→オフライン・全画面で確実に鳴る
