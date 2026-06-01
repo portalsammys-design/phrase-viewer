@@ -846,7 +846,7 @@ function renderPhrases() {
     <div class="phrase-card" onclick="toggleWords('${p.id}')">
       <div class="phrase-source">${esc(p.source_text)}</div>
       <div class="phrase-translations">
-        ${en ? `<div class="phrase-lang"><span class="tag">EN</span><span class="text">${esc(en.translation)}</span></div>` : (p.en_translation ? `<div class="phrase-lang"><span class="tag">EN</span><span class="text">${esc(p.en_translation)}</span></div>` : '')}
+        ${en ? `<div class="phrase-lang"><span class="tag">EN</span><span class="text">${esc(en.translation)}</span><button class="tts-btn" onclick="event.stopPropagation();speak('${escAttr(en.translation)}','en-US')">&#x1f50a;</button></div>` : (p.en_translation ? `<div class="phrase-lang"><span class="tag">EN</span><span class="text">${esc(p.en_translation)}</span><button class="tts-btn" onclick="event.stopPropagation();speak('${escAttr(p.en_translation)}','en-US')">&#x1f50a;</button></div>` : '')}
         ${t ? `<div class="phrase-lang"><span class="tag">${activeLang.toUpperCase()}</span><span class="text">${esc(t.translation)}</span>${t.pronunciation ? `<span class="pronunciation">${esc(t.pronunciation)}</span>` : ''}<button class="tts-btn" onclick="event.stopPropagation();speak('${escAttr(t.translation)}','${t.tts_locale || LANG_TTS[activeLang]}','${p.id}')">&#x1f50a;</button></div>` : ''}
       </div>
       <div class="phrase-meta">
@@ -1074,7 +1074,7 @@ function renderStudyCard() {
             <span class="tag">EN</span>
             <span class="text">${esc(en.translation)}</span>
             <button class="tts-btn" onclick="event.stopPropagation();speak('${escAttr(en.translation)}','en-US')">&#x1f50a;</button>
-          </div>` : (p.en_translation ? `<div class="back-lang"><span class="tag">EN</span><span class="text">${esc(p.en_translation)}</span></div>` : '')}
+          </div>` : (p.en_translation ? `<div class="back-lang"><span class="tag">EN</span><span class="text">${esc(p.en_translation)}</span><button class="tts-btn" onclick="event.stopPropagation();speak('${escAttr(p.en_translation)}','en-US')">&#x1f50a;</button></div>` : '')}
           ${t ? `<div class="back-lang" style="cursor:pointer" onclick="event.stopPropagation();showWordLang('${p.id}','${activeLang}')">
             <span class="tag">${activeLang.toUpperCase()}</span>
             <span class="text">${esc(t.translation)}</span>
@@ -1353,6 +1353,9 @@ function selectWord(chipIndex) {
   const word = chip.dataset.word;
   buildSelected.push(word);
   chip.classList.add('disabled');
+
+  // WAL-312(A): タップした単語を自動再生（単語mp3は無いのでWeb Speech、選択言語に応じて）
+  speak(word, LANG_TTS[buildLang] || LANG_TTS[activeLang] || 'en-US');
 
   const answerArea = document.getElementById('build-answer');
   const placedChip = document.createElement('span');
