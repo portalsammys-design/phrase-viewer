@@ -682,6 +682,15 @@ function getTranslation(phraseId, lang) {
   return allTranslations[phraseId + '_' + (lang || activeLang)] || null;
 }
 
+// そのフレーズが指定言語で学習可能か（phrase_translations優先、en/viは旧列もフォールバック）
+function hasLang(phrase, lang) {
+  lang = lang || activeLang;
+  if (getTranslation(phrase.id, lang)) return true;
+  if (lang === 'en') return !!phrase.en_translation;
+  if (lang === 'vi') return !!phrase.vi_translation;
+  return false;
+}
+
 function getAvailableLangs() {
   const langs = new Set();
   Object.keys(allTranslations).forEach(k => {
@@ -823,6 +832,8 @@ function filterBy(category) {
 function renderPhrases() {
   let filtered = activeSource === 'all' ? allPhrases : allPhrases.filter(p => p.source === activeSource);
   if (activeCategory !== 'all') filtered = filtered.filter(p => p.category === activeCategory);
+  // 選択言語で学習可能なフレーズのみ表示（WAL-311: Bahasa選択時にID基礎が出るように）
+  filtered = filtered.filter(p => hasLang(p, activeLang));
   const container = document.getElementById('phrase-list');
   if (filtered.length === 0) {
     container.innerHTML = `<div class="empty"><h2>No phrases yet</h2><p>Extract phrases from text to see them here</p></div>`;
@@ -836,14 +847,14 @@ function renderPhrases() {
       <div class="phrase-source">${esc(p.source_text)}</div>
       <div class="phrase-translations">
         ${en ? `<div class="phrase-lang"><span class="tag">EN</span><span class="text">${esc(en.translation)}</span></div>` : (p.en_translation ? `<div class="phrase-lang"><span class="tag">EN</span><span class="text">${esc(p.en_translation)}</span></div>` : '')}
-        ${t ? `<div class="phrase-lang"><span class="tag">${activeLang.toUpperCase()}</span><span class="text">${esc(t.translation)}</span>${t.pronunciation ? `<span class="pronunciation">${esc(t.pronunciation)}</span>` : ''}</div>` : ''}
+        ${t ? `<div class="phrase-lang"><span class="tag">${activeLang.toUpperCase()}</span><span class="text">${esc(t.translation)}</span>${t.pronunciation ? `<span class="pronunciation">${esc(t.pronunciation)}</span>` : ''}<button class="tts-btn" onclick="event.stopPropagation();speak('${escAttr(t.translation)}','${t.tts_locale || LANG_TTS[activeLang]}','${p.id}')">&#x1f50a;</button></div>` : ''}
       </div>
       <div class="phrase-meta">
         <span class="badge">${esc(p.category)}</span>
         <span class="count">${p.occurrence_count}x</span>
         ${p.source === 'preset' ? `<button class="fav-btn ${p.favorite ? 'active' : ''}" onclick="event.stopPropagation();toggleFav('${p.id}',this)">${p.favorite ? '\u2605' : '\u2606'}</button>` : ''}
       </div>
-      <div class="words-panel" id="words-${p.id}">${renderWordRows(p.id)}</div>
+      <div class="words-panel" id="words-${p.id}">${renderWordRows(p.id, activeLang, p)}</div>
     </div>
   `}).join('');
 }
@@ -900,25 +911,27 @@ function getWordsForPhrase(phraseId, lang, phrase) {
 }
 
 function renderWordRows(phraseId, lang, phrase) {
-  lang = lang || 'vi';
+  lang = lang || activeLang || 'vi';
   // Find the phrase object if not passed
   if (!phrase) phrase = allPhrases.find(p => p.id === phraseId);
 
+  // 学習対象言語（en以外）。enタブ表示中でも、もう片方は現在の学習言語を出す（WAL-311: id等に対応）
+  const primaryLang = (lang && lang !== 'en') ? lang : activeLang;
   const enResult = getWordsForPhrase(phraseId, 'en', phrase);
-  const viResult = getWordsForPhrase(phraseId, 'vi', phrase);
+  const langResult = getWordsForPhrase(phraseId, primaryLang, phrase);
   const hasEn = enResult.words.length > 0;
-  const hasVi = viResult.words.length > 0;
-  if (!hasEn && !hasVi) return '<h3>No word breakdown available</h3>';
+  const hasLangW = langResult.words.length > 0;
+  if (!hasEn && !hasLangW) return '<h3>No word breakdown available</h3>';
 
   let tabs = '';
-  if (hasEn && hasVi) {
+  if (hasEn && hasLangW) {
     tabs = `<div style="display:flex;gap:4px;margin-bottom:8px">
       <button class="filter-btn ${lang==='en'?'active':''}" onclick="event.stopPropagation();showWordLang('${phraseId}','en')" style="padding:4px 12px;font-size:12px">EN</button>
-      <button class="filter-btn ${lang==='vi'?'active':''}" onclick="event.stopPropagation();showWordLang('${phraseId}','vi')" style="padding:4px 12px;font-size:12px">VI</button>
+      <button class="filter-btn ${lang!=='en'?'active':''}" onclick="event.stopPropagation();showWordLang('${phraseId}','${primaryLang}')" style="padding:4px 12px;font-size:12px">${primaryLang.toUpperCase()}</button>
     </div>`;
   }
 
-  const result = lang === 'en' ? enResult : viResult;
+  const result = lang === 'en' ? enResult : langResult;
   const displayWords = result.words;
 
   const isAuto = result.source === 'auto';
@@ -964,8 +977,9 @@ async function toggleFav(phraseId, btn) {
   }
 }
 
-function isStudyEligible(p) {
-  return p.source === 'conversation' || (p.source === 'preset' && p.favorite);
+function isStudyEligible(p, lang) {
+  // 選択言語で学習可能なフレーズのみ対象（WAL-311: ID基礎=preset非favも対象にする）
+  return hasLang(p, lang || activeLang);
 }
 
 function toggleWords(phraseId) {
@@ -1007,7 +1021,7 @@ async function loadStudySession() {
   // Build study queue: due reviews first, then new phrases
   studyQueue = [];
   (dueProgress || []).forEach(lp => {
-    if (lp.phrases) studyQueue.push({ phrase: lp.phrases, progress: lp });
+    if (lp.phrases && hasLang(lp.phrases, activeLang)) studyQueue.push({ phrase: lp.phrases, progress: lp });
   });
 
   const remaining = DAILY_LIMIT - studyQueue.length;
@@ -1257,10 +1271,10 @@ let buildCorrectOrder = [];
 async function loadBuildSession() {
   // Phrases that have word breakdowns
   // All phrases with translations can be used (auto-split fallback)
-  const phrasesWithWords = allPhrases.filter(p => isStudyEligible(p)).filter(p => {
-    const vi = getWordsForPhrase(p.id, 'vi', p);
+  const phrasesWithWords = allPhrases.filter(p => isStudyEligible(p, activeLang)).filter(p => {
+    const lw = getWordsForPhrase(p.id, activeLang, p);
     const en = getWordsForPhrase(p.id, 'en', p);
-    return (vi.words.length > 1) || (en.words.length > 1);
+    return (lw.words.length > 1) || (en.words.length > 1);
   });
 
   buildQueue = phrasesWithWords.slice(0, DAILY_LIMIT);
