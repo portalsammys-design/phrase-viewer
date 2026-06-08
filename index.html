@@ -846,7 +846,7 @@ function renderPhrases() {
     <div class="phrase-card" onclick="toggleWords('${p.id}')">
       <div class="phrase-source">${esc(p.source_text)}</div>
       <div class="phrase-translations">
-        ${en ? `<div class="phrase-lang"><span class="tag">EN</span><span class="text">${esc(en.translation)}</span><button class="tts-btn" onclick="event.stopPropagation();speak('${escAttr(en.translation)}','en-US')">&#x1f50a;</button></div>` : (p.en_translation ? `<div class="phrase-lang"><span class="tag">EN</span><span class="text">${esc(p.en_translation)}</span><button class="tts-btn" onclick="event.stopPropagation();speak('${escAttr(p.en_translation)}','en-US')">&#x1f50a;</button></div>` : '')}
+        ${en ? `<div class="phrase-lang"><span class="tag">EN</span><span class="text">${esc(en.translation)}</span><button class="tts-btn" onclick="event.stopPropagation();speak('${escAttr(en.translation)}','en-US','${p.id}')">&#x1f50a;</button></div>` : (p.en_translation ? `<div class="phrase-lang"><span class="tag">EN</span><span class="text">${esc(p.en_translation)}</span><button class="tts-btn" onclick="event.stopPropagation();speak('${escAttr(p.en_translation)}','en-US','${p.id}')">&#x1f50a;</button></div>` : '')}
         ${t ? `<div class="phrase-lang"><span class="tag">${activeLang.toUpperCase()}</span><span class="text">${esc(t.translation)}</span>${t.pronunciation ? `<span class="pronunciation">${esc(t.pronunciation)}</span>` : ''}<button class="tts-btn" onclick="event.stopPropagation();speak('${escAttr(t.translation)}','${t.tts_locale || LANG_TTS[activeLang]}','${p.id}')">&#x1f50a;</button></div>` : ''}
       </div>
       <div class="phrase-meta">
@@ -1073,8 +1073,8 @@ function renderStudyCard() {
           ${en ? `<div class="back-lang" style="cursor:pointer" onclick="event.stopPropagation();showWordLang('${p.id}','en')">
             <span class="tag">EN</span>
             <span class="text">${esc(en.translation)}</span>
-            <button class="tts-btn" onclick="event.stopPropagation();speak('${escAttr(en.translation)}','en-US')">&#x1f50a;</button>
-          </div>` : (p.en_translation ? `<div class="back-lang"><span class="tag">EN</span><span class="text">${esc(p.en_translation)}</span><button class="tts-btn" onclick="event.stopPropagation();speak('${escAttr(p.en_translation)}','en-US')">&#x1f50a;</button></div>` : '')}
+            <button class="tts-btn" onclick="event.stopPropagation();speak('${escAttr(en.translation)}','en-US','${p.id}')">&#x1f50a;</button>
+          </div>` : (p.en_translation ? `<div class="back-lang"><span class="tag">EN</span><span class="text">${esc(p.en_translation)}</span><button class="tts-btn" onclick="event.stopPropagation();speak('${escAttr(p.en_translation)}','en-US','${p.id}')">&#x1f50a;</button></div>` : '')}
           ${t ? `<div class="back-lang" style="cursor:pointer" onclick="event.stopPropagation();showWordLang('${p.id}','${activeLang}')">
             <span class="tag">${activeLang.toUpperCase()}</span>
             <span class="text">${esc(t.translation)}</span>
